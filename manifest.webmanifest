@@ -1,10 +1,10 @@
 {
-  "name": "EV Logbook Kairos",
-  "short_name": "EVLog",
-  "start_url": "index.html",
+  "name": "EV Logbook - Kairos",
+  "short_name": "EV Logbook",
+  "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#05070b",
+  "theme_color": "#10141a",
   "icons": [
     {
       "src": "icons/icon-192.png",
