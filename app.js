@@ -1,135 +1,174 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EV Logbook</title>
-  <meta name="theme-color" content="#10141a" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-<div class="app">
-  <header class="app-header">
-    <h1>EV Logbook</h1>
-    <span class="subtitle">Kairos Edition</span>
-  </header>
+const STORAGE_KEY = "evlogbook-data-v1";
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="dashboard">Dashboard</button>
-    <button class="tab" data-tab="charges">Cargas</button>
-    <button class="tab" data-tab="vehicle">Vehículo</button>
-  </nav>
+let state = {
+  vehicle: {
+    brand: "",
+    model: "",
+    year: "",
+    usableKwh: "",
+    ratedConsumption: ""
+  },
+  charges: [] // {date, startSoc, endSoc, kwh, cost, km, notes}
+};
 
-  <main>
-    <!-- DASHBOARD -->
-    <section id="dashboard" class="tab-panel active">
-      <div class="card">
-        <h2>Resumen</h2>
-        <div class="stats-grid">
-          <div class="stat">
-            <span class="label">Autonomía estimada</span>
-            <span class="value" id="stat-range">–</span>
-          </div>
-          <div class="stat">
-            <span class="label">Consumo medio</span>
-            <span class="value" id="stat-consumption">–</span>
-          </div>
-          <div class="stat">
-            <span class="label">Costo / 100 km</span>
-            <span class="value" id="stat-cost">–</span>
-          </div>
-          <div class="stat">
-            <span class="label">Cargas registradas</span>
-            <span class="value" id="stat-charges">0</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Última carga</h2>
-        <p id="last-charge">Aún no has registrado cargas.</p>
-      </div>
-    </section>
-
-    <!-- CARGAS -->
-    <section id="charges" class="tab-panel">
-      <div class="card">
-        <h2>Nueva carga</h2>
-        <form id="charge-form" autocomplete="off">
-          <div class="field">
-            <label>% inicio</label>
-            <input type="number" id="startSoc" min="0" max="100" required />
-          </div>
-          <div class="field">
-            <label>% final</label>
-            <input type="number" id="endSoc" min="0" max="100" required />
-          </div>
-          <div class="field">
-            <label>kWh entregados</label>
-            <input type="number" step="0.01" id="kwh" required />
-          </div>
-          <div class="field">
-            <label>Costo total (moneda local)</label>
-            <input type="number" step="0.01" id="cost" required />
-          </div>
-          <div class="field">
-            <label>Km recorridos desde la última carga</label>
-            <input type="number" step="0.1" id="km" required />
-          </div>
-          <div class="field">
-            <label>Notas (opcional)</label>
-            <input type="text" id="notes" placeholder="EA - 150 kW, clima frío…" />
-          </div>
-          <button type="submit" class="primary">Guardar carga</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <h2>Historial de cargas</h2>
-        <ul id="charges-list" class="list"></ul>
-      </div>
-    </section>
-
-    <!-- VEHÍCULO -->
-    <section id="vehicle" class="tab-panel">
-      <div class="card">
-        <h2>Datos del vehículo</h2>
-        <form id="vehicle-form" autocomplete="off">
-          <div class="field">
-            <label>Marca</label>
-            <input type="text" id="brand" placeholder="Hyundai" />
-          </div>
-          <div class="field">
-            <label>Modelo</label>
-            <input type="text" id="model" placeholder="Ioniq 5" />
-          </div>
-          <div class="field">
-            <label>Año</label>
-            <input type="number" id="year" placeholder="2023" />
-          </div>
-          <div class="field">
-            <label>Capacidad batería usable (kWh)</label>
-            <input type="number" step="0.1" id="usableKwh" placeholder="72.6" />
-          </div>
-          <div class="field">
-            <label>Consumo WLTP / EPA (kWh/100 km)</label>
-            <input type="number" step="0.1" id="ratedConsumption" placeholder="17.0" />
-          </div>
-          <button type="submit" class="primary">Guardar vehículo</button>
-        </form>
-      </div>
-    </section>
-  </main>
-</div>
-
-<script src="app.js"></script>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('service-worker.js');
-    });
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state = JSON.parse(raw);
+  } catch (e) {
+    console.warn("No se pudo cargar el estado:", e);
   }
-</script>
-</body>
-</html>
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  return d.toLocaleString();
+}
+
+// ---- UI ----
+const tabs = document.querySelectorAll(".tab");
+const panels = document.querySelectorAll(".tab-panel");
+
+tabs.forEach(btn => {
+  btn.addEventListener("click", () => {
+    tabs.forEach(t => t.classList.remove("active"));
+    panels.forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+
+// Forms
+const chargeForm = document.getElementById("charge-form");
+const chargesList = document.getElementById("charges-list");
+const lastChargeText = document.getElementById("last-charge");
+
+const statRange = document.getElementById("stat-range");
+const statCons = document.getElementById("stat-consumption");
+const statCost = document.getElementById("stat-cost");
+const statCharges = document.getElementById("stat-charges");
+
+const vehicleForm = document.getElementById("vehicle-form");
+
+// ---- RENDER ----
+function renderVehicleForm() {
+  const v = state.vehicle;
+  vehicleForm.brand.value = v.brand || "";
+  vehicleForm.model.value = v.model || "";
+  vehicleForm.year.value = v.year || "";
+  vehicleForm.usableKwh.value = v.usableKwh || "";
+  vehicleForm.ratedConsumption.value = v.ratedConsumption || "";
+}
+
+function renderCharges() {
+  chargesList.innerHTML = "";
+  if (!state.charges.length) {
+    chargesList.innerHTML = "<li class='list-item'><span>Aún no hay cargas guardadas.</span></li>";
+    lastChargeText.textContent = "Aún no has registrado cargas.";
+    statCharges.textContent = "0";
+    statRange.textContent = "–";
+    statCons.textContent = "–";
+    statCost.textContent = "–";
+    return;
+  }
+
+  statCharges.textContent = state.charges.length.toString();
+
+  let totalKm = 0;
+  let totalKwh = 0;
+  let totalCost = 0;
+
+  state.charges.slice().reverse().forEach(c => {
+    totalKm += Number(c.km);
+    totalKwh += Number(c.kwh);
+    totalCost += Number(c.cost);
+
+    const li = document.createElement("li");
+    li.className = "list-item";
+    const eff = c.km && c.kwh ? (c.kwh / (c.km / 100)).toFixed(1) : "–";
+    li.innerHTML = `
+      <strong>${formatDate(c.date)}</strong><br>
+      <span>${c.startSoc}% → ${c.endSoc}% | ${c.kwh} kWh | ${c.cost} $ | ${c.km} km (${eff} kWh/100 km)</span>
+      ${c.notes ? "<br><span>Notas: " + c.notes + "</span>" : ""}
+    `;
+    chargesList.appendChild(li);
+  });
+
+  const last = state.charges[state.charges.length - 1];
+  const effLast = last.km && last.kwh
+    ? (last.kwh / (last.km / 100)).toFixed(1) + " kWh/100 km"
+    : "–";
+
+  lastChargeText.innerHTML =
+    `<strong>${formatDate(last.date)}</strong><br>
+     ${last.startSoc}% → ${last.endSoc}% | ${last.kwh} kWh | ${last.cost} $ | ${last.km} km<br>
+     <span>Consumo: ${effLast}</span>`;
+
+  // Stats globales
+  if (totalKm > 0 && totalKwh > 0) {
+    const avgCons = totalKwh / (totalKm / 100); // kWh / 100km
+    statCons.textContent = avgCons.toFixed(1) + " kWh/100 km";
+
+    const avgCostPer100 = (totalCost / totalKm) * 100;
+    statCost.textContent = avgCostPer100.toFixed(2) + " $ /100 km";
+
+    const usable = Number(state.vehicle.usableKwh || 0);
+    if (usable > 0) {
+      const range = (usable / (avgCons / 100));
+      statRange.textContent = range.toFixed(0) + " km";
+    } else {
+      statRange.textContent = "–";
+    }
+  } else {
+    statCons.textContent = "–";
+    statCost.textContent = "–";
+    statRange.textContent = "–";
+  }
+}
+
+// ---- HANDLERS ----
+chargeForm.addEventListener("submit", e => {
+  e.preventDefault();
+  const startSoc = Number(document.getElementById("startSoc").value);
+  const endSoc   = Number(document.getElementById("endSoc").value);
+  const kwh      = Number(document.getElementById("kwh").value);
+  const cost     = Number(document.getElementById("cost").value);
+  const km       = Number(document.getElementById("km").value);
+  const notes    = document.getElementById("notes").value.trim();
+
+  if (isNaN(startSoc) || isNaN(endSoc) || isNaN(kwh) || isNaN(cost) || isNaN(km)) {
+    alert("Revisa los campos numéricos.");
+    return;
+  }
+
+  state.charges.push({
+    date: new Date().toISOString(),
+    startSoc, endSoc, kwh, cost, km, notes
+  });
+  saveState();
+  chargeForm.reset();
+  renderCharges();
+});
+
+vehicleForm.addEventListener("submit", e => {
+  e.preventDefault();
+  state.vehicle = {
+    brand: vehicleForm.brand.value.trim(),
+    model: vehicleForm.model.value.trim(),
+    year: vehicleForm.year.value.trim(),
+    usableKwh: vehicleForm.usableKwh.value.trim(),
+    ratedConsumption: vehicleForm.ratedConsumption.value.trim()
+  };
+  saveState();
+  renderVehicleForm();
+  alert("Vehículo guardado.");
+});
+
+// ---- INIT ----
+loadState();
+renderVehicleForm();
+renderCharges();
